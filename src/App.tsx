@@ -182,6 +182,15 @@ const App: React.FC = () => {
   const [selectedStation, setSelectedStation] = useState<GeoPoint>(STATIONS[1]);
   const [currentUser, setCurrentUser] = useState<UserProfile>(USER_PROFILES[0]);
   const [activeTab, setActiveTab] = useState<'access' | 'dss'>('access');
+  const [routingMode, setRoutingMode] = useState<'fastest' | 'safest' | 'coolest' | 'accessible' | 'recommended'>('recommended');
+  const [selectedScenario, setSelectedScenario] = useState<'PT' | 'PES' | 'HM'>('HM');
+  const [simulationYear, setSimulationYear] = useState<number>(10);
+
+  const scenarioDetails = useMemo(() => ({
+    PT: { name: '純植樹 (PT)', color: '#ef4444', pros: '生態效益高、成本較低', cons: '初期遮蔭不足，需等待樹冠成熟', description: '以自然植栽為主，受土層深度限制較大。' },
+    PES: { name: '純高架結構 (PES)', color: '#3b82f6', pros: '立即遮蔭，熱舒適穩定', cons: '生態效益與空間彈性較低', description: '即時提供100%遮蔭，但缺乏生物多樣性。' },
+    HM: { name: '混合模型 (HM)', color: '#10b981', pros: '兼具立即遮蔭與長期生態', cons: '構造與維護較複雜', description: '結構遮蔭與側植喬木結合，都市整合最優解。' }
+  }), []);
 
   const focusOn = (point: GeoPoint) => {
     setMapCenter(point.coordinates);
@@ -300,9 +309,38 @@ const App: React.FC = () => {
               </div>
             </section>
 
-            {/* 三、分析卡片 */}
+            {/* 三、路徑偏好 */}
             <section style={{ marginBottom: '32px' }}>
-              <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '20px' }}>03 通達效益實測</h2>
+              <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center' }}>
+                <Compass size={14} style={{ marginRight: '8px' }} /> 03 規劃路徑偏好
+              </h2>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                {[
+                  { id: 'fastest', label: '最快路徑', color: '#ef4444' },
+                  { id: 'safest', label: '最安全', color: '#3b82f6' },
+                  { id: 'coolest', label: '夏季避暑', color: '#10b981' },
+                  { id: 'accessible', label: '無障礙', color: '#8b5cf6' },
+                  { id: 'recommended', label: '綜合推薦', color: '#f59e0b' },
+                ].map(mode => (
+                  <button 
+                    key={mode.id} onClick={() => setRoutingMode(mode.id as any)}
+                    style={{ 
+                      padding: '8px', borderRadius: '6px', cursor: 'pointer',
+                      backgroundColor: routingMode === mode.id ? mode.color : '#1e293b',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      color: routingMode === mode.id ? '#0f172a' : '#94a3b8',
+                      fontWeight: '800', fontSize: '0.65rem', transition: 'all 0.2s'
+                    }}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* 四、分析卡片 */}
+            <section style={{ marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '20px' }}>04 通達效益實測</h2>
               {relatedPOIs.map(poi => {
                 const penalty = CROSSING_PENALTY[poi.crossingType] * poi.crossings;
                 const groundTime = (poi.distToGreenway / currentUser.speed) + penalty + (poi.roadWidth / currentUser.speed);
@@ -315,25 +353,60 @@ const App: React.FC = () => {
                       <span style={{ fontSize: '0.7rem', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '4px' }}>{poi.distToGreenway}m</span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                      <div style={{ padding: '12px', background: 'rgba(239,68,68,0.05)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)' }}>
-                        <div style={{ color: '#f87171', fontSize: '0.65rem', fontWeight: '900', marginBottom: '4px' }}>地面模式</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>{formatTime(groundTime)}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginTop: '4px' }}>⚠ {poi.crossings}路口 | +{penalty}s 延遲</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                  {/* 地面模式卡片 */}
+                  <div style={{ padding: '12px', background: 'rgba(239,68,68,0.05)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.2)' }}>
+                    <div style={{ color: '#f87171', fontSize: '0.65rem', fontWeight: '900', marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                      <Construction size={10} style={{ marginRight: '4px' }} /> 地面模式 (A)
+                    </div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', marginBottom: '8px' }}>{formatTime(groundTime)}</div>
+                    
+                    <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>熱舒適 PET</span>
+                        <span style={{ color: '#f87171' }}>45.4°C (極高)</span>
                       </div>
-                      <div style={{ padding: '12px', background: 'rgba(16,185,129,0.05)', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)' }}>
-                        <div style={{ color: '#10b981', fontSize: '0.65rem', fontWeight: '900', marginBottom: '4px' }}>綠園道模式</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>{formatTime(bridgeTime)}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginTop: '4px' }}>✅ 0次穿越 | 垂直流動</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>遮蔭覆蓋率</span>
+                        <span style={{ color: '#f87171' }}>10%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>安全風險</span>
+                        <span style={{ color: '#f87171' }}>{poi.trafficRisk === 'High' ? '高' : '中'} ({poi.crossings}路口)</span>
                       </div>
                     </div>
+                  </div>
 
-                    <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', fontSize: '0.75rem', borderLeft: '3px solid #3b82f6', lineHeight: '1.6' }}>
-                      <strong style={{ color: '#3b82f6' }}>分析結論：</strong> 
-                      {bridgeTime > groundTime 
-                        ? `雖慢 ${Math.round(bridgeTime - groundTime)}s，但顯著降低車流衝突與體力耗損，適合${currentUser.name}。`
-                        : `可節省 ${Math.round(groundTime - bridgeTime)}s，且提供完全的人車分流環境。`}
+                  {/* 綠園道模式卡片 */}
+                  <div style={{ padding: '12px', background: 'rgba(16,185,129,0.05)', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)' }}>
+                    <div style={{ color: '#10b981', fontSize: '0.65rem', fontWeight: '900', marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                      <TreePine size={10} style={{ marginRight: '4px' }} /> 綠園道模式 (B)
                     </div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', marginBottom: '8px' }}>{formatTime(bridgeTime)}</div>
+
+                    <div style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>熱舒適 PET</span>
+                        <span style={{ color: '#10b981' }}>34.0°C (舒適)</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>遮蔭覆蓋率</span>
+                        <span style={{ color: '#10b981' }}>95%</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>安全風險</span>
+                        <span style={{ color: '#10b981' }}>極低 (0路口)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', fontSize: '0.75rem', borderLeft: '3px solid #3b82f6', lineHeight: '1.6' }}>
+                  <strong style={{ color: '#3b82f6' }}>綜合評估建議：</strong> 
+                  {bridgeTime > groundTime 
+                    ? `雖步行時間稍長，但考量「夏季熱舒適」與「人車分流安全性」，綠園道模式能提供更友善的慢行體驗，對${currentUser.name}尤其關鍵。`
+                    : `綠園道模式在「時間效率」與「熱環境舒適」上均具壓倒性優勢，可省下 ${Math.round(groundTime - bridgeTime)}s 並避開車流衝突點。`}
+                </div>
                   </div>
                 );
               })}
@@ -413,17 +486,51 @@ const App: React.FC = () => {
             </React.Fragment>
           ))}
 
-          {/* 連結動線視覺化 */}
-          {selectedStation && relatedPOIs.map(poi => (
-            <Polyline 
-              key={poi.id} 
-              positions={[selectedStation.coordinates, poi.coordinates]} 
-              color="#3b82f6" 
-              weight={2} 
-              dashArray="5, 10" 
-              opacity={0.6} 
-            />
-          ))}
+          {/* 連結動線視覺化 - 根據路由模式顯示不同顏色與路徑 */}
+          {selectedStation && relatedPOIs.map(poi => {
+            let pathColor = '#3b82f6'; // Default (Safest/Recommended)
+            let pathWeight = 2;
+            let pathOpacity = 0.6;
+            let dashArray = "5, 10";
+
+            if (routingMode === 'fastest') {
+              pathColor = '#ef4444';
+              dashArray = "";
+            } else if (routingMode === 'coolest') {
+              pathColor = '#10b981';
+              pathWeight = 4;
+              pathOpacity = 0.8;
+              dashArray = "";
+            } else if (routingMode === 'accessible') {
+              pathColor = '#8b5cf6';
+              dashArray = "10, 5";
+            } else if (routingMode === 'recommended') {
+              pathColor = '#f59e0b';
+              pathWeight = 3;
+              pathOpacity = 0.9;
+              dashArray = "";
+            }
+
+            // 模擬最涼路徑會優先導向綠園道
+            const isGreenwayMode = routingMode === 'coolest' || routingMode === 'safest' || (routingMode === 'recommended' && currentUser.id !== 'student');
+            
+            return (
+              <React.Fragment key={poi.id}>
+                <Polyline 
+                  positions={[selectedStation.coordinates, poi.coordinates]} 
+                  color={pathColor} 
+                  weight={pathWeight} 
+                  dashArray={dashArray} 
+                  opacity={pathOpacity} 
+                >
+                  <Popup>
+                    <strong>{routingMode === 'coolest' ? '夏季避暑推薦路徑' : '分析路徑'}</strong><br/>
+                    優先考量：{routingMode}
+                  </Popup>
+                </Polyline>
+              </React.Fragment>
+            );
+          })}
         </MapContainer>
       </div>
     </div>
