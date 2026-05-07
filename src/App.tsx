@@ -4,11 +4,11 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Compass, Map as MapIcon, Home, Clock, Building2, Users, Info, Activity, Zap, TreePine, Construction, Combine, TrendingDown, Award } from 'lucide-react';
 import { STATIONS, VERTICAL_CIRCULATION, GREENWAY_PATH, POIS, TRAVEL_PARAMS, USER_PROFILES, CROSSING_PENALTY, GeoPoint, UserProfile } from './data/geoData';
-import { RADAR_LABELS, RADAR_DATA, getScenarioSummary, COMFORT_THRESHOLD } from './data/dssData';
+import { RADAR_LABELS, RADAR_DATA, getScenarioSummary, COMFORT_THRESHOLD, getPTPET, getPESPET, getHMPET, getPTShade, getHMShade, getEcoScorePT, getEcoScorePES, getEcoScoreHM } from './data/dssData';
 
 // --- DSS View Component ---
-const DSSView = () => {
-  const { data, totalHours } = useMemo(() => getScenarioSummary(), []);
+const DSSView = ({ selectedScenario, setSelectedScenario, simulationYear, setSimulationYear, selectedStation, scenarioDetails }: any) => {
+  const { data } = useMemo(() => getScenarioSummary(), []);
   
   const COLORS = {
     PT: '#ef4444',
@@ -16,117 +16,107 @@ const DSSView = () => {
     HM: '#10b981'
   };
 
+  const currentMetrics = useMemo(() => {
+    const y = simulationYear;
+    return {
+      PT: { pet: getPTPET(y), shade: getPTShade(y), eco: getEcoScorePT(y) },
+      PES: { pet: getPESPET(y), shade: 1.0, eco: getEcoScorePES(y) },
+      HM: { pet: getHMPET(y), shade: getHMShade(y), eco: getEcoScoreHM(y) }
+    };
+  }, [simulationYear]);
+
+  const activeMetrics = currentMetrics[selectedScenario as 'PT' | 'PES' | 'HM'];
+
   return (
     <div style={{ color: '#f8fafc' }}>
+      {/* 區段方案切換 */}
+      <section style={{ marginBottom: '32px' }}>
+        <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center' }}>
+          <Combine size={14} style={{ marginRight: '8px' }} /> 01 {selectedStation.name} 方案模擬
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '20px' }}>
+          {(['PT', 'PES', 'HM'] as const).map(s => (
+            <button 
+              key={s} onClick={() => setSelectedScenario(s)}
+              style={{ 
+                padding: '12px 4px', borderRadius: '8px', cursor: 'pointer',
+                backgroundColor: selectedScenario === s ? COLORS[s] : '#1e293b',
+                border: 'none', color: selectedScenario === s ? '#0f172a' : '#94a3b8',
+                fontWeight: '900', fontSize: '0.75rem', transition: 'all 0.3s'
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {/* 方案詳情卡片 */}
+        <div style={{ padding: '20px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${scenarioDetails[selectedScenario].color}44`, marginBottom: '20px' }}>
+          <div style={{ fontWeight: '900', fontSize: '1rem', color: scenarioDetails[selectedScenario].color, marginBottom: '8px' }}>
+            {scenarioDetails[selectedScenario].name}
+          </div>
+          <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '12px', lineHeight: '1.4' }}>{scenarioDetails[selectedScenario].description}</p>
+          <div style={{ fontSize: '0.7rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex' }}><span style={{ color: '#10b981', fontWeight: '900', marginRight: '6px' }}>[優]</span> <span style={{ color: '#f8fafc' }}>{scenarioDetails[selectedScenario].pros}</span></div>
+            <div style={{ display: 'flex' }}><span style={{ color: '#ef4444', fontWeight: '900', marginRight: '6px' }}>[缺]</span> <span style={{ color: '#f8fafc' }}>{scenarioDetails[selectedScenario].cons}</span></div>
+          </div>
+        </div>
+
+        {/* 模擬時間軸 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>模擬年份：第 {simulationYear} 年</span>
+          </div>
+          <input 
+            type="range" min="0" max="30" value={simulationYear} 
+            onChange={(e) => setSimulationYear(parseInt(e.target.value))}
+            style={{ width: '100%', accentColor: scenarioDetails[selectedScenario].color }}
+          />
+        </div>
+
+        {/* 即時指標統計 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+          <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginBottom: '4px' }}>PET 溫度</div>
+            <div style={{ fontSize: '1rem', fontWeight: '900', color: activeMetrics.pet <= 35 ? '#10b981' : '#f87171' }}>{activeMetrics.pet.toFixed(1)}°C</div>
+          </div>
+          <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginBottom: '4px' }}>遮蔭覆蓋</div>
+            <div style={{ fontSize: '1rem', fontWeight: '900' }}>{(activeMetrics.shade * 100).toFixed(0)}%</div>
+          </div>
+          <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.6rem', color: '#94a3b8', marginBottom: '4px' }}>生態效益</div>
+            <div style={{ fontSize: '1rem', fontWeight: '900', color: '#3b82f6' }}>{activeMetrics.eco.toFixed(0)}</div>
+          </div>
+        </div>
+      </section>
+
       <section style={{ marginBottom: '32px' }}>
         <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '20px', display: 'flex', alignItems: 'center' }}>
-          <TrendingDown size={14} style={{ marginRight: '8px' }} /> 01 PET 熱舒適趨勢 (30年)
+          <TrendingDown size={14} style={{ marginRight: '8px' }} /> 02 30年熱舒適趨勢分析
         </h2>
-        <div style={{ height: '200px', width: '100%', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <div style={{ position: 'absolute', left: '40px', right: '20px', top: '20px', bottom: '30px' }}>
-            {/* Grid lines */}
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} style={{ position: 'absolute', top: `${i * 33.3}%`, left: 0, right: 0, borderTop: '1px solid rgba(255,255,255,0.05)' }} />
-            ))}
-            {/* Comfort Threshold Line */}
-            <div style={{ position: 'absolute', top: `${(45.4 - 35) / (45.4 - 28) * 100}%`, left: 0, right: 0, borderTop: '2px dashed #f59e0b', zorder: 10 }}>
-              <span style={{ position: 'absolute', right: 0, top: '-18px', fontSize: '0.6rem', color: '#f59e0b' }}>舒適門檻 35°C</span>
-            </div>
-            {/* SVG Path for trends */}
+        <div style={{ height: '160px', width: '100%', position: 'relative', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '15px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ position: 'absolute', left: '40px', right: '15px', top: '15px', bottom: '25px' }}>
+            <div style={{ position: 'absolute', top: `${(45.4 - 35) / (45.4 - 28) * 100}%`, left: 0, right: 0, borderTop: '1px dashed #f59e0b', opacity: 0.5 }} />
             <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-              {/* HM Path */}
-              <polyline
-                fill="none"
-                stroke={COLORS.HM}
-                strokeWidth="2"
-                points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.HM) / (45.4 - 28) * 100}`).join(' ')}
-              />
-              {/* PES Path */}
-              <polyline
-                fill="none"
-                stroke={COLORS.PES}
-                strokeWidth="1.5"
-                points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.PES) / (45.4 - 28) * 100}`).join(' ')}
-              />
-              {/* PT Path */}
-              <polyline
-                fill="none"
-                stroke={COLORS.PT}
-                strokeWidth="1.5"
-                strokeDasharray="2"
-                points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.PT) / (45.4 - 28) * 100}`).join(' ')}
-              />
+              <polyline fill="none" stroke={COLORS.HM} strokeWidth={selectedScenario === 'HM' ? '3' : '1'} opacity={selectedScenario === 'HM' ? '1' : '0.3'} points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.HM) / (45.4 - 28) * 100}`).join(' ')} />
+              <polyline fill="none" stroke={COLORS.PES} strokeWidth={selectedScenario === 'PES' ? '3' : '1'} opacity={selectedScenario === 'PES' ? '1' : '0.3'} points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.PES) / (45.4 - 28) * 100}`).join(' ')} />
+              <polyline fill="none" stroke={COLORS.PT} strokeWidth={selectedScenario === 'PT' ? '3' : '1'} opacity={selectedScenario === 'PT' ? '1' : '0.3'} strokeDasharray="2" points={data.map((d, i) => `${(i / 30) * 100},${(45.4 - d.PT) / (45.4 - 28) * 100}`).join(' ')} />
+              {/* 年份指示線 */}
+              <line x1={(simulationYear / 30) * 100} y1="0" x2={(simulationYear / 30) * 100} y2="100" stroke="#fff" strokeWidth="1" opacity="0.4" />
             </svg>
-          </div>
-          <div style={{ position: 'absolute', left: '40px', right: '20px', bottom: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#94a3b8' }}>
-            <span>第0年</span>
-            <span>第15年</span>
-            <span>第30年</span>
-          </div>
-          <div style={{ position: 'absolute', left: '10px', top: '20px', bottom: '30px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: '0.6rem', color: '#94a3b8' }}>
-            <span>45°C</span>
-            <span>35°C</span>
-            <span>28°C</span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '12px', marginTop: '12px', fontSize: '0.65rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}><div style={{ width: 8, height: 8, background: COLORS.PT, marginRight: 4 }} /> PT 純植樹</div>
-          <div style={{ display: 'flex', alignItems: 'center' }}><div style={{ width: 8, height: 8, background: COLORS.PES, marginRight: 4 }} /> PES 純高架</div>
-          <div style={{ display: 'flex', alignItems: 'center' }}><div style={{ width: 8, height: 8, background: COLORS.HM, marginRight: 4 }} /> HM 混合模型</div>
-        </div>
-      </section>
-
-      <section style={{ marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '0.75rem', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', marginBottom: '20px', display: 'flex', alignItems: 'center' }}>
-          <Award size={14} style={{ marginRight: '8px' }} /> 02 綜合評估雷達 (0-100)
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <svg width="100%" height="150" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-              <circle cx="50" cy="50" r="20" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-              {[0, 72, 144, 216, 288].map(angle => (
-                <line key={angle} x1="50" y1="50" x2={50 + 40 * Math.cos(angle * Math.PI / 180)} y2={50 + 40 * Math.sin(angle * Math.PI / 180)} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-              ))}
-              {/* HM Radar */}
-              <polygon
-                points={RADAR_DATA.HM.map((v, i) => {
-                  const angle = (i * 72 - 90) * Math.PI / 180;
-                  const r = (v / 100) * 40;
-                  return `${50 + r * Math.cos(angle)},${50 + r * Math.sin(angle)}`;
-                }).join(' ')}
-                fill="rgba(16, 185, 129, 0.2)"
-                stroke={COLORS.HM}
-                strokeWidth="1"
-              />
-              {/* PES Radar */}
-              <polygon
-                points={RADAR_DATA.PES.map((v, i) => {
-                  const angle = (i * 72 - 90) * Math.PI / 180;
-                  const r = (v / 100) * 40;
-                  return `${50 + r * Math.cos(angle)},${50 + r * Math.sin(angle)}`;
-                }).join(' ')}
-                fill="rgba(59, 130, 246, 0.1)"
-                stroke={COLORS.PES}
-                strokeWidth="0.8"
-              />
-            </svg>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center' }}>
-            {RADAR_LABELS.map((label, i) => (
-              <div key={label} style={{ fontSize: '0.7rem', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8' }}>{label}</span>
-                <span style={{ fontWeight: 'bold', color: COLORS.HM }}>{RADAR_DATA.HM[i]}</span>
-              </div>
-            ))}
           </div>
         </div>
       </section>
 
-      <section style={{ padding: '20px', background: 'rgba(16,185,129,0.1)', borderRadius: '12px', border: '1px solid rgba(16,185,129,0.2)' }}>
-        <h3 style={{ fontSize: '0.8rem', fontWeight: '900', color: '#10b981', marginBottom: '12px' }}>決策結論</h3>
+      <section style={{ padding: '20px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+        <h3 style={{ fontSize: '0.8rem', fontWeight: '900', color: COLORS[selectedScenario as 'PT'|'PES'|'HM'], marginBottom: '12px' }}>決策建議：{selectedStation.name}</h3>
         <p style={{ fontSize: '0.75rem', lineHeight: '1.6', color: '#f8fafc' }}>
-          混合模型 (HM) 在第8年即進入熱舒適區，並在生態效益與空間自由度上取得最高分。相較於純植樹，其累計舒適小時數提升了 <strong>{Math.round(totalHours.HM / totalHours.PT)} 倍</strong>，是歷史文化保護區的最佳平衡方案。
+          {selectedScenario === 'HM' 
+            ? `此段建議採 ${scenarioDetails.HM.name}，因為可在第8年即進入熱舒適區，並隨時間提供更高的生態效益。`
+            : selectedScenario === 'PT'
+            ? `採 ${scenarioDetails.PT.name} 雖具備高生態潛力，但在此路段受土層限制，30年內 PET 仍達 ${(getPTPET(30)).toFixed(1)}°C，無法有效改善暑熱。`
+            : `採 ${scenarioDetails.PES.name} 雖能立即降溫，但長期而言缺乏生物多樣性與蒸發散熱帶來的額外效益。`}
         </p>
       </section>
     </div>
