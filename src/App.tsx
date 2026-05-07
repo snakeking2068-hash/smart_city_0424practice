@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Compass, Map as MapIcon, Home, Clock, Building2, Users, Info, Activity, Zap, TreePine, Construction, Combine, TrendingDown, Award } from 'lucide-react';
 import { STATIONS, VERTICAL_CIRCULATION, GREENWAY_PATH, POIS, TRAVEL_PARAMS, USER_PROFILES, CROSSING_PENALTY, GeoPoint, UserProfile } from './data/geoData';
-import { RADAR_LABELS, RADAR_DATA, getScenarioSummary, COMFORT_THRESHOLD, getPTPET, getPESPET, getHMPET, getPTShade, getHMShade, getEcoScorePT, getEcoScorePES, getEcoScoreHM } from './data/dssData';
+import { RADAR_LABELS, RADAR_DATA, getScenarioSummary, COMFORT_THRESHOLD, getPTPET, getPESPET, getHMPET, getPTShade, getHMShade, getEcoScorePT, getEcoScorePES, getEcoScoreHM, getAnnualUsableHours } from './data/dssData';
 
 // --- DSS View Component ---
 const DSSView = ({ selectedScenario, setSelectedScenario, simulationYear, setSimulationYear, selectedStation, scenarioDetails }: any) => {
@@ -175,6 +175,24 @@ const App: React.FC = () => {
   const [routingMode, setRoutingMode] = useState<'fastest' | 'safest' | 'coolest' | 'accessible' | 'recommended'>('recommended');
   const [selectedScenario, setSelectedScenario] = useState<'PT' | 'PES' | 'HM'>('HM');
   const [simulationYear, setSimulationYear] = useState<number>(10);
+  const [activeLayers, setActiveLayers] = useState<Record<string, boolean>>({
+    accessTime: false,
+    crossingRisk: false,
+    thermalPET: true,
+    shadeCoverage: false,
+    usability: false,
+    decisionScore: false
+  });
+
+  const COLORS = {
+    PT: '#ef4444',
+    PES: '#3b82f6',
+    HM: '#10b981'
+  };
+
+  const toggleLayer = (layer: string) => {
+    setActiveLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
+  };
 
   const scenarioDetails = useMemo(() => ({
     PT: { name: '純植樹 (PT)', color: '#ef4444', pros: '生態效益高、成本較低', cons: '初期遮蔭不足，需等待樹冠成熟', description: '以自然植栽為主，受土層深度限制較大。' },
@@ -199,6 +217,70 @@ const App: React.FC = () => {
     POIS.filter(p => p.linkedStationId === selectedStation.id),
     [selectedStation]
   );
+
+  const getPlannedPath = (poi: any) => {
+    // 簡單路由邏輯：
+    // 如果是夏季避暑、最安全、或推薦（且非學生），則走綠園道路徑
+    const useGreenway = routingMode === 'coolest' || routingMode === 'safest' || (routingMode === 'recommended' && currentUser.id !== 'student');
+    
+    if (useGreenway) {
+      // 尋找離 POI 最近的綠園道節點
+      let minPOI = Infinity;
+      let poiNode = GREENWAY_PATH[0];
+      GREENWAY_PATH.forEach(pos => {
+        const d = Math.sqrt(Math.pow(pos[0]-poi.coordinates[0], 2) + Math.pow(pos[1]-poi.coordinates[1], 2));
+        if (d < minPOI) { minPOI = d; poiNode = pos; }
+      });
+
+      // 尋找離 Station 最近的綠園道節點
+      let minStation = Infinity;
+      let stationNode = GREENWAY_PATH[0];
+      let stationIdx = 0;
+      GREENWAY_PATH.forEach((pos, idx) => {
+        const d = Math.sqrt(Math.pow(pos[0]-selectedStation.coordinates[0], 2) + Math.pow(pos[1]-selectedStation.coordinates[1], 2));
+        if (d < minStation) { minStation = d; stationNode = pos; stationIdx = idx; }
+      });
+
+      // 取得 POI 節點在路徑中的索引
+      const poiIdx = GREENWAY_PATH.findIndex(p => p === poiNode);
+      
+      // 提取綠園道路段
+      const start = Math.min(stationIdx, poiIdx);
+      const end = Math.max(stationIdx, poiIdx);
+      const segments = GREENWAY_PATH.slice(start, end + 1);
+      if (stationIdx > poiIdx) segments.reverse();
+
+      // 尋找適合使用者的垂直動線 (如：輪椅優先找電梯)
+      const targetVType = currentUser.id === 'wheelchair' ? 'elevator' : 'slope';
+      const bestV = VERTICAL_CIRCULATION
+        .filter(v => v.name.toLowerCase().includes(targetVType))
+        .sort((a, b) => {
+          const distA = Math.sqrt(Math.pow(a.coordinates[0]-poiNode[0], 2) + Math.pow(a.coordinates[1]-poiNode[1], 2));
+          const distB = Math.sqrt(Math.pow(b.coordinates[0]-poiNode[0], 2) + Math.pow(b.coordinates[1]-poiNode[1], 2));
+          return distA - distB;
+        })[0];
+
+      return {
+        positions: [
+          selectedStation.coordinates,
+          ...segments,
+          bestV ? bestV.coordinates : poiNode,
+          poi.coordinates
+        ],
+        vPoint: bestV
+      };
+    } else {
+      // 平面路徑模擬
+      return {
+        positions: [
+          selectedStation.coordinates,
+          [selectedStation.coordinates[0], poi.coordinates[1]],
+          poi.coordinates
+        ],
+        vPoint: null
+      };
+    }
+  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#0f172a', color: '#f8fafc' }}>
@@ -427,13 +509,52 @@ const App: React.FC = () => {
             </section>
           </>
         ) : (
-          <DSSView />
+          <DSSView 
+            selectedScenario={selectedScenario} 
+            setSelectedScenario={setSelectedScenario} 
+            simulationYear={simulationYear} 
+            setSimulationYear={setSimulationYear} 
+            selectedStation={selectedStation} 
+            scenarioDetails={scenarioDetails} 
+          />
         )}
       </div>
 
 
       {/* Map Content */}
       <div style={{ flex: 1, position: 'relative' }}>
+        {/* Layer Switcher Panel */}
+        <div style={{ 
+          position: 'absolute', top: '20px', right: '20px', zIndex: 1000,
+          background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(8px)',
+          padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
+          width: '200px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+        }}>
+          <h3 style={{ fontSize: '0.75rem', fontWeight: '900', color: '#10b981', marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
+            <MapIcon size={14} style={{ marginRight: '8px' }} /> 圖層切換
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[
+              { id: 'accessTime', label: '通達時間圖層' },
+              { id: 'crossingRisk', label: '過馬路風險圖層' },
+              { id: 'thermalPET', label: '熱舒適 PET 圖層' },
+              { id: 'shadeCoverage', label: '遮蔭覆蓋率圖層' },
+              { id: 'usability', label: '30 年可用性圖層' },
+              { id: 'decisionScore', label: '綜合決策分數圖層' },
+            ].map(layer => (
+              <label key={layer.id} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '0.75rem', color: '#f8fafc' }}>
+                <input 
+                  type="checkbox" 
+                  checked={activeLayers[layer.id]} 
+                  onChange={() => toggleLayer(layer.id)}
+                  style={{ marginRight: '10px', accentColor: '#10b981' }}
+                />
+                {layer.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
         <MapContainer center={mapCenter} zoom={16} style={{ height: '100%', width: '100%' }}>
           {/* 使用深色酷炫底圖 */}
           <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
@@ -443,6 +564,43 @@ const App: React.FC = () => {
           <Polyline positions={GREENWAY_PATH} color="#10b981" weight={6} opacity={0.6} />
           <Polyline positions={GREENWAY_PATH} color="#10b981" weight={2} opacity={0.9} />
           
+          {/* PET / Shade / Usability Heatmap along Greenway */}
+          {(activeLayers.thermalPET || activeLayers.shadeCoverage || activeLayers.usability) && (
+            GREENWAY_PATH.map((pos, i) => {
+              if (i === 0) return null;
+              const prev = GREENWAY_PATH[i-1];
+              const pet = selectedScenario === 'PT' ? getPTPET(simulationYear) : (selectedScenario === 'PES' ? getPESPET(simulationYear) : getHMPET(simulationYear));
+              const shade = selectedScenario === 'PT' ? getPTShade(simulationYear) : (selectedScenario === 'PES' ? 1.0 : getHMShade(simulationYear));
+              const hours = getAnnualUsableHours(pet);
+
+              let color = '#10b981';
+              if (activeLayers.thermalPET) {
+                color = pet <= 35 ? '#10b981' : (pet <= 38 ? '#f59e0b' : '#ef4444');
+              } else if (activeLayers.shadeCoverage) {
+                color = shade >= 0.8 ? '#10b981' : (shade >= 0.4 ? '#3b82f6' : '#94a3b8');
+              } else if (activeLayers.usability) {
+                color = hours >= 2000 ? '#10b981' : (hours >= 1000 ? '#3b82f6' : '#ef4444');
+              }
+
+              return <Polyline key={`heat-${i}`} positions={[prev, pos]} color={color} weight={12} opacity={0.4} />;
+            })
+          )}
+
+          {/* 綜合決策分數圖層 - 用雷達圖覆蓋在站點上或顯示分數 */}
+          {activeLayers.decisionScore && STATIONS.map(s => {
+            const score = Math.round(Object.values(RADAR_DATA[selectedScenario]).reduce((a: number, b: number) => a + b, 0) / 5);
+            return (
+              <Circle 
+                key={`score-${s.id}`}
+                center={s.coordinates}
+                radius={score * 1.5}
+                pathOptions={{ fillColor: COLORS[selectedScenario as keyof typeof COLORS], fillOpacity: 0.3, color: COLORS[selectedScenario as keyof typeof COLORS], weight: 1 }}
+              >
+                <Popup>綜合評分: {score}分</Popup>
+              </Circle>
+            );
+          })}
+
           {/* 站點標記 */}
           {STATIONS.map(s => (
             <Marker key={s.id} position={s.coordinates} icon={stationIcon}>
@@ -457,9 +615,72 @@ const App: React.FC = () => {
             </Marker>
           ))}
 
+          {/* 區域色塊 (Zoning) - 商辦與住宅區 */}
+          {POIS.map(p => {
+            const offset = 0.0015; // 區域大小偏移量
+            const bounds: [number, number][] = [
+              [p.coordinates[0] - offset, p.coordinates[1] - offset],
+              [p.coordinates[0] + offset, p.coordinates[1] - offset],
+              [p.coordinates[0] + offset, p.coordinates[1] + offset],
+              [p.coordinates[0] - offset, p.coordinates[1] + offset],
+            ];
+            
+            return (
+              <Polygon 
+                key={`zone-${p.id}`}
+                positions={bounds}
+                pathOptions={{
+                  fillColor: p.poiType === 'residential' ? '#10b981' : '#3b82f6',
+                  fillOpacity: 0.1,
+                  color: p.poiType === 'residential' ? '#10b981' : '#3b82f6',
+                  weight: 1,
+                  dashArray: '5, 5'
+                }}
+              >
+                <Popup>
+                  <div style={{ fontSize: '0.75rem' }}>
+                    <strong style={{ color: p.poiType === 'residential' ? '#10b981' : '#3b82f6' }}>
+                      {p.poiType === 'residential' ? '住宅社區區域' : '商辦核心區域'}
+                    </strong><br/>
+                    預估影響範圍: 150m x 150m
+                  </div>
+                </Popup>
+              </Polygon>
+            );
+          })}
+
           {/* POI 與社區範圍標示 */}
           {POIS.map(p => (
             <React.Fragment key={p.id}>
+              {/* 通達時間圖層 - 顯示緩衝圓圈 */}
+              {activeLayers.accessTime && (
+                <Circle 
+                  center={p.coordinates} 
+                  radius={(p.distToGreenway / currentUser.speed) * 0.5} 
+                  pathOptions={{ 
+                    fillColor: '#8b5cf6', 
+                    fillOpacity: 0.2, 
+                    color: '#8b5cf6',
+                    weight: 1,
+                    dashArray: '5, 5'
+                  }} 
+                />
+              )}
+
+              {/* 過馬路風險圖層 - 標示危險點 */}
+              {activeLayers.crossingRisk && p.crossings > 0 && (
+                <Circle 
+                  center={p.coordinates} 
+                  radius={p.crossings * 10} 
+                  pathOptions={{ 
+                    fillColor: p.trafficRisk === 'High' ? '#ef4444' : '#f59e0b', 
+                    fillOpacity: 0.4, 
+                    color: 'white',
+                    weight: 1
+                  }} 
+                />
+              )}
+
               {/* 社區影響範圍光圈 */}
               <Circle 
                 center={p.coordinates} 
@@ -501,23 +722,42 @@ const App: React.FC = () => {
               dashArray = "";
             }
 
-            // 模擬最涼路徑會優先導向綠園道
-            const isGreenwayMode = routingMode === 'coolest' || routingMode === 'safest' || (routingMode === 'recommended' && currentUser.id !== 'student');
-            
+            const { positions, vPoint } = getPlannedPath(poi);
+
             return (
               <React.Fragment key={poi.id}>
                 <Polyline 
-                  positions={[selectedStation.coordinates, poi.coordinates]} 
+                  positions={positions as any} 
                   color={pathColor} 
                   weight={pathWeight} 
                   dashArray={dashArray} 
                   opacity={pathOpacity} 
                 >
                   <Popup>
-                    <strong>{routingMode === 'coolest' ? '夏季避暑推薦路徑' : '分析路徑'}</strong><br/>
-                    優先考量：{routingMode}
+                    <div style={{ padding: '4px' }}>
+                      <strong style={{ color: pathColor }}>{
+                        routingMode === 'coolest' ? '夏季避暑推薦路徑' : 
+                        routingMode === 'fastest' ? '最快平面路徑' : '分析規劃路徑'
+                      }</strong>
+                      <div style={{ fontSize: '0.7rem', marginTop: '4px', color: '#64748b' }}>
+                        優先權：{routingMode}<br/>
+                        路徑節點：{positions.length} 處<br/>
+                        {vPoint && `建議轉乘點：${vPoint.name}`}
+                      </div>
+                    </div>
                   </Popup>
                 </Polyline>
+
+                {/* 轉乘點高亮標示 */}
+                {vPoint && (
+                  <Circle 
+                    center={vPoint.coordinates}
+                    radius={15}
+                    pathOptions={{ color: '#fff', fillColor: pathColor, fillOpacity: 0.8, weight: 2 }}
+                  >
+                    <Popup>建議此處上下綠園道 ({vPoint.name})</Popup>
+                  </Circle>
+                )}
               </React.Fragment>
             );
           })}
